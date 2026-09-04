@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Openbaar toegankelijke busnetwerk data
+    match /haltes/{halteId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /custom_bussen/{busId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /disruptions/{disruptionId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Persoonlijke opgeslagen routes voor gebruikers
+    match /saved_routes/{routeId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Gebruikersvoorkeuren en favorieten
+    match /user_preferences/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

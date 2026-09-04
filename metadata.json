@@ -1,0 +1,6 @@
+{
+  "name": "BusApp Venlo - NCS",
+  "description": "Realtime bustijden, reisplanner en NCS Studio met live OV-netwerkverbinding en Firebase synchronisatie voor Venlo en regio.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
