@@ -13,8 +13,9 @@ import {
   ChevronDown,
   ChevronUp,
   MapPin,
+  Settings,
 } from 'lucide-react';
-import { Halte, Departure, FilterType, SourceMode, CustomBus } from '../types';
+import { Halte, Departure, FilterType, SourceMode, CustomBus, SiteSettings } from '../types';
 import { generateScheduleForLine } from '../utils/routeCatalog';
 
 interface DepartureBoardProps {
@@ -27,6 +28,8 @@ interface DepartureBoardProps {
   lastUpdated: Date | null;
   onDeleteCustomBus: (busId: string) => void;
   onSelectBus: (bus: Departure) => void;
+  settings?: SiteSettings;
+  onOpenSettings?: () => void;
 }
 
 export const DepartureBoard: React.FC<DepartureBoardProps> = ({
@@ -39,6 +42,8 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
   lastUpdated,
   onDeleteCustomBus,
   onSelectBus,
+  settings,
+  onOpenSettings,
 }) => {
   const [currentFilter, setCurrentFilter] = useState<FilterType>('alle');
   const [filterQuery, setFilterQuery] = useState<string>('');
@@ -280,6 +285,17 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
             <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
               HALTE: {halte.name}
             </span>
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="bg-slate-700/70 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-600/50"
+                title="Bordstijl, kleuren en weergave aanpassen"
+              >
+                <Settings className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden sm:inline">Stijl</span>
+              </button>
+            )}
             <button
               onClick={onRefresh}
               className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium transition-colors shadow-sm"
@@ -322,8 +338,14 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
           ) : (
             filteredDepartures.map((bus) => {
               const mins = getMinutesUntil(bus.time);
-              const badgeStyle = getLineBadgeStyle(bus.line, bus.type);
+              const badgeStyle = settings?.highContrastLines
+                ? 'bg-black text-white border-2 border-white font-black'
+                : getLineBadgeStyle(bus.line, bus.type);
               const isApproaching = mins !== null && mins >= 0 && mins <= 2;
+              const isCompact = settings?.density === 'compact';
+              const isLargeText = settings?.textSize === 'large';
+              const timeFormat = settings?.timeFormat || 'both';
+
               const busStops =
                 bus.stops && bus.stops.length > 0
                   ? bus.stops
@@ -340,14 +362,16 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
                 <div key={bus.id} className="border-b border-slate-800/60 last:border-b-0">
                   <div
                     onClick={() => onSelectBus(bus)}
-                    className={`grid grid-cols-12 gap-2 px-4 py-3.5 items-center hover:bg-blue-500/5 cursor-pointer transition-colors group ${
+                    className={`grid grid-cols-12 gap-2 px-4 ${
+                      isCompact ? 'py-2' : 'py-3.5'
+                    } items-center hover:bg-blue-500/5 cursor-pointer transition-colors group ${
                       isApproaching ? 'bg-blue-500/5' : ''
                     }`}
                   >
                     {/* Line Number Badge */}
                     <div className="col-span-2 sm:col-span-2 flex items-center">
                       <span
-                        className={`${badgeStyle} px-2 py-1 rounded text-xs font-bold text-center inline-block min-w-[34px]`}
+                        className={`${badgeStyle} px-2 py-1 rounded text-xs font-bold text-center inline-block min-w-[34px] shadow-sm`}
                       >
                         {bus.line}
                       </span>
@@ -356,7 +380,11 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
                     {/* Destination, Stops Preview & Operator */}
                     <div className="col-span-5 sm:col-span-5 flex items-center gap-2 overflow-hidden">
                       <div className="truncate w-full">
-                        <div className="font-medium text-slate-200 group-hover:text-blue-400 transition-colors truncate">
+                        <div
+                          className={`font-medium text-slate-200 group-hover:text-blue-400 transition-colors truncate ${
+                            isLargeText ? 'text-sm' : 'text-xs sm:text-sm'
+                          }`}
+                        >
                           <span className="truncate">{bus.destination}</span>
                           {bus.custom && (
                             <span className="text-[8px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1 py-0.2 rounded font-bold uppercase shrink-0 ml-1.5">
@@ -366,7 +394,7 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
                         </div>
 
                         {/* Intermediate stops preview with times */}
-                        {busStops.length > 1 && (
+                        {settings?.showStopsPreview !== false && busStops.length > 1 && (
                           <div className="text-[10px] text-slate-400 truncate mt-0.5 flex items-center gap-1 font-sans">
                             <MapPin className="w-2.5 h-2.5 text-blue-400 shrink-0" />
                             <span className="truncate">
@@ -395,15 +423,25 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
                     {/* Departure Time */}
                     <div className="col-span-2 sm:col-span-2 text-right">
                       <div
-                        className={`font-mono text-sm ${
+                        className={`font-mono ${
+                          isLargeText ? 'text-base' : 'text-sm'
+                        } ${
                           isApproaching
                             ? 'text-blue-400 font-bold'
                             : 'text-slate-300 font-medium'
                         }`}
                       >
-                        {mins === 0 ? 'Nu' : bus.time}
+                        {timeFormat === 'relative'
+                          ? mins === 0
+                            ? 'Nu'
+                            : mins !== null && mins > 0
+                            ? `over ${mins} min`
+                            : bus.time
+                          : mins === 0
+                          ? 'Nu'
+                          : bus.time}
                       </div>
-                      {mins !== null && mins > 0 && mins <= 60 && (
+                      {timeFormat === 'both' && mins !== null && mins > 0 && mins <= 60 && (
                         <div className="text-[10px] text-slate-500 font-mono">
                           over {mins} min
                         </div>

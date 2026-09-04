@@ -308,3 +308,30 @@ export async function upvoteDisruptionInFirestore(disruptionId: string): Promise
   });
 }
 
+// Save User Site Settings (Theme, colors, density)
+export async function saveUserSettingsToFirestore(userId: string, settings: any): Promise<void> {
+  const prefDocRef = doc(db, 'user_preferences', userId);
+  await setDoc(
+    prefDocRef,
+    {
+      siteSettings: settings,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+}
+
+// Fetch User Site Settings from Firestore
+export async function getUserSettingsFromFirestore(userId: string): Promise<any | null> {
+  try {
+    const prefDocRef = doc(db, 'user_preferences', userId);
+    const snap = await getDoc(prefDocRef);
+    if (snap.exists() && snap.data()?.siteSettings) {
+      return snap.data().siteSettings;
+    }
+  } catch (err) {
+    console.warn('Could not load user settings from Firestore:', err);
+  }
+  return null;
+}
+

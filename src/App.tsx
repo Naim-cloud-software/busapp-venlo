@@ -7,6 +7,7 @@ import { TripPlannerModal } from './components/TripPlannerModal';
 import { CreatorStudioModal } from './components/CreatorStudioModal';
 import { BusDetailModal } from './components/BusDetailModal';
 import { AuthModal } from './components/AuthModal';
+import { SettingsModal } from './components/SettingsModal';
 import { DEFAULT_HALTES } from './defaultData';
 import {
   Halte,
@@ -15,6 +16,8 @@ import {
   LiveDisruption,
   SourceMode,
   SavedRoute,
+  SiteSettings,
+  DEFAULT_SITE_SETTINGS,
 } from './types';
 import {
   subscribeToCustomHaltes,
@@ -32,12 +35,23 @@ import {
   deleteUserRouteFromFirestore,
   saveUserFavoritesToFirestore,
   getUserFavoritesFromFirestore,
+  saveUserSettingsToFirestore,
+  getUserSettingsFromFirestore,
 } from './firebase';
+import {
+  loadSettingsFromStorage,
+  saveSettingsToStorage,
+  applyThemeToDocument,
+} from './utils/themeHelper';
 import { playTransitChime } from './utils/audio';
-import { Bus, Navigation, Cpu } from 'lucide-react';
+import { Bus, Navigation, Cpu, Settings } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 export default function App() {
+  // Site Stijl & Weergave Instellingen
+  const [settings, setSettings] = useState<SiteSettings>(() => loadSettingsFromStorage());
+  const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
+
   // User Authentication State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
@@ -139,11 +153,27 @@ export default function App() {
             setFavorites(cloudFavs);
           }
         });
+
+        // Load cloud site settings if available
+        getUserSettingsFromFirestore(user.uid).then((cloudSettings) => {
+          if (cloudSettings) {
+            setSettings((prev) => ({
+              ...prev,
+              ...cloudSettings,
+            }));
+          }
+        });
       }
     });
 
     return () => unsubscribeAuth();
   }, []);
+
+  // Apply site theme & visual styling to document
+  useEffect(() => {
+    applyThemeToDocument(settings);
+    saveSettingsToStorage(settings);
+  }, [settings]);
 
   // Sync saved routes for current user in real-time
   useEffect(() => {
@@ -278,8 +308,10 @@ export default function App() {
     }
   }, [selectedHalte, sourceModes, fetchLiveDepartures]);
 
-  // Periodic background auto-refresh every 45s
+  // Periodic background auto-refresh according to user settings
   useEffect(() => {
+    if (!settings.autoRefreshInterval || settings.autoRefreshInterval <= 0) return;
+
     const interval = setInterval(() => {
       if (selectedHalte) {
         const mode = sourceModes[selectedHalte.id] || (selectedHalte.custom ? 'custom' : 'live');
@@ -287,10 +319,31 @@ export default function App() {
           fetchLiveDepartures(selectedHalte);
         }
       }
-    }, 45000);
+    }, settings.autoRefreshInterval * 1000);
 
     return () => clearInterval(interval);
-  }, [selectedHalte, sourceModes, fetchLiveDepartures]);
+  }, [selectedHalte, sourceModes, fetchLiveDepartures, settings.autoRefreshInterval]);
+
+  // Update site settings handler (saves locally & syncs to cloud if logged in)
+  const handleUpdateSettings = (newSettings: Partial<SiteSettings>) => {
+    setSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      saveSettingsToStorage(updated);
+      if (currentUser) {
+        saveUserSettingsToFirestore(currentUser.uid, updated);
+      }
+      return updated;
+    });
+  };
+
+  // Reset settings to default
+  const handleResetSettings = () => {
+    setSettings(DEFAULT_SITE_SETTINGS);
+    saveSettingsToStorage(DEFAULT_SITE_SETTINGS);
+    if (currentUser) {
+      saveUserSettingsToFirestore(currentUser.uid, DEFAULT_SITE_SETTINGS);
+    }
+  };
 
   // Determine current active source mode
   const currentSourceMode: SourceMode = selectedHalte
@@ -490,14 +543,31 @@ export default function App() {
     }
   };
 
+  const getContainerThemeClasses = () => {
+    switch (settings.themeMode) {
+      case 'light-day':
+        return 'bg-slate-100 text-slate-900';
+      case 'dark-slate':
+        return 'bg-slate-900 text-slate-100';
+      case 'high-contrast':
+        return 'bg-black text-white';
+      case 'dark-midnight':
+      default:
+        return 'bg-[#020617] text-slate-200';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 flex flex-col antialiased selection:bg-blue-600 selection:text-white pb-20 md:pb-0">
+    <div
+      className={`min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white pb-20 md:pb-0 transition-colors duration-200 ${getContainerThemeClasses()}`}
+    >
       {/* Bovenste Navigatiekop */}
       <Header
         firebaseConnected={firebaseConnected}
         lastUpdated={lastUpdated}
         onOpenPlanner={() => setPlannerOpen(true)}
         onOpenStudio={() => setStudioOpen(true)}
+        onOpenSettings={() => setSettingsModalOpen(true)}
         currentUser={currentUser}
         savedRoutesCount={savedRoutes.length}
         onOpenAuth={() => setAuthModalOpen(true)}
@@ -545,6 +615,8 @@ export default function App() {
             lastUpdated={lastUpdated}
             onDeleteCustomBus={handleDeleteCustomBus}
             onSelectBus={(bus) => setSelectedBusForDetail(bus)}
+            settings={settings}
+            onOpenSettings={() => setSettingsModalOpen(true)}
           />
         </section>
       </main>
@@ -570,7 +642,17 @@ export default function App() {
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_6px_rgba(16,185,129,0.8)]"></span>
               <span>CLOUD SYNC ACTIEF</span>
             </span>
-            <span className="text-slate-400">VERVERSEN: 45 SEC</span>
+            <span className="text-slate-400">
+              VERVERSEN: {settings.autoRefreshInterval > 0 ? `${settings.autoRefreshInterval} SEC` : 'HANDMATIG'}
+            </span>
+            <button
+              onClick={() => setSettingsModalOpen(true)}
+              className="text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wider flex items-center gap-1"
+              title="Klik om stijl aan te passen"
+            >
+              <Settings className="w-3 h-3" />
+              <span>STIJL: {settings.themeMode.replace('dark-', '').replace('light-', '')}</span>
+            </button>
           </div>
         </div>
       </footer>
@@ -612,6 +694,16 @@ export default function App() {
           <Cpu className="w-4 h-4" />
           <span>NCS Studio</span>
         </button>
+
+        <button
+          onClick={() => {
+            setSettingsModalOpen(true);
+          }}
+          className="flex flex-col items-center gap-1 text-[10px] font-semibold transition-colors text-slate-400 hover:text-blue-400"
+        >
+          <Settings className="w-4 h-4" />
+          <span>Stijl</span>
+        </button>
       </div>
 
       {/* Reisplanner & Opgeslagen Routes Modal */}
@@ -649,6 +741,16 @@ export default function App() {
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
+      />
+
+      {/* Site Stijl & Weergave Instellingen Modal */}
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onResetSettings={handleResetSettings}
+        currentUser={currentUser}
       />
     </div>
   );

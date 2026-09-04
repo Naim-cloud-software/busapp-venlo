@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Bus, Volume2, VolumeX, Navigation, Cpu, Bookmark, LogIn, LogOut, User as UserIcon, CheckCircle2 } from 'lucide-react';
+import {
+  Bus,
+  Volume2,
+  VolumeX,
+  Navigation,
+  Cpu,
+  Bookmark,
+  LogIn,
+  LogOut,
+  User as UserIcon,
+  CheckCircle2,
+  Settings,
+} from 'lucide-react';
 import { playTransitChime } from '../utils/audio';
 import { User } from 'firebase/auth';
 
@@ -8,6 +20,7 @@ interface HeaderProps {
   lastUpdated: Date | null;
   onOpenPlanner: () => void;
   onOpenStudio: () => void;
+  onOpenSettings: () => void;
   currentUser: User | null;
   savedRoutesCount: number;
   onOpenAuth: () => void;
@@ -19,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   lastUpdated,
   onOpenPlanner,
   onOpenStudio,
+  onOpenSettings,
   currentUser,
   savedRoutesCount,
   onOpenAuth,
@@ -100,6 +114,15 @@ export const Header: React.FC<HeaderProps> = ({
             <Cpu className="w-3.5 h-3.5" />
             <span>Creator Studio</span>
           </button>
+
+          <button
+            onClick={onOpenSettings}
+            className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/60 flex items-center gap-1.5 transition-colors"
+            title="Site stijl, kleuren en weergave aanpassen"
+          >
+            <Settings className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden md:inline">Stijl & Opties</span>
+          </button>
         </div>
 
         {/* User Inloggen / Profiel knop */}
@@ -145,6 +168,17 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="space-y-1 text-xs">
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      onOpenSettings();
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-slate-800 text-slate-300 hover:text-white flex items-center gap-2"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Stijl & Instellingen</span>
+                  </button>
+
                   <button
                     onClick={() => {
                       setUserMenuOpen(false);

@@ -83,3 +83,35 @@ export interface SavedRoute {
 export type FilterType = 'alle' | 'streek' | 'stads' | 'express' | 'custom';
 export type SourceMode = 'live' | 'custom';
 
+export type ThemeMode = 'dark-midnight' | 'dark-slate' | 'light-day' | 'high-contrast';
+export type AccentColor = 'blue' | 'amber' | 'emerald' | 'rose' | 'purple' | 'cyan';
+export type DisplayDensity = 'normal' | 'compact';
+export type TimeFormat = 'exact' | 'relative' | 'both';
+export type TextSize = 'normal' | 'large';
+
+export interface SiteSettings {
+  themeMode: ThemeMode;
+  accentColor: AccentColor;
+  density: DisplayDensity;
+  timeFormat: TimeFormat;
+  textSize: TextSize;
+  autoRefreshInterval: number; // in seconden: 15, 30, 45, 60, of 0 (uit)
+  soundEffects: boolean;
+  showStopsPreview: boolean;
+  highContrastLines: boolean;
+  reducedMotion: boolean;
+}
+
+export const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  themeMode: 'dark-midnight',
+  accentColor: 'blue',
+  density: 'normal',
+  timeFormat: 'both',
+  textSize: 'normal',
+  autoRefreshInterval: 45,
+  soundEffects: true,
+  showStopsPreview: true,
+  highContrastLines: false,
+  reducedMotion: false,
+};
+
