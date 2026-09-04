@@ -119,17 +119,29 @@ export const CreatorStudioModal: React.FC<CreatorStudioModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      let cleanCode = halteCode.trim() || 'CUSTOM';
+      let drglUrl: string | undefined;
+      const urlMatch = cleanCode.match(/stop\/([a-zA-Z0-9:_]+)/i);
+      if (urlMatch) {
+        drglUrl = cleanCode.startsWith('http') ? cleanCode : `https://${cleanCode}`;
+        cleanCode = urlMatch[1];
+      } else if (cleanCode !== 'CUSTOM' && cleanCode.includes(':')) {
+        drglUrl = `https://drgl.nl/stop/${cleanCode}`;
+      }
+
       await onSaveHalte({
         name: halteName.trim(),
         type: halteType.trim(),
         icon: halteIcon,
         city: halteCity.trim() || 'Venlo',
-        code: halteCode.trim() || 'CUSTOM',
+        code: cleanCode,
+        drglUrl,
         custom: true,
         createdAt: new Date().toISOString(),
       });
 
       setHalteName('');
+      setHalteCode('CUSTOM');
       showNotification(`Halte "${halteName}" toegevoegd aan netwerk!`);
     } catch (err: any) {
       console.warn('Error saving halte:', err);

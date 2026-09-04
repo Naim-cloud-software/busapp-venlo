@@ -4,10 +4,11 @@ export const DEFAULT_HALTES: Halte[] = [
   {
     id: 'venlo_station',
     code: 'NL:S:69000900',
-    name: 'Venlo, Busstation (Centraal)',
+    name: 'Busstation Station Venlo, Venlo (Stationsplein)',
     type: 'Hoofdstation & Busplatform',
     icon: 'train',
     city: 'Venlo',
+    drglUrl: 'https://drgl.nl/stop/NL:S:69000900',
   },
   {
     id: 'hospital_viecuri',

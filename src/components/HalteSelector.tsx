@@ -16,6 +16,7 @@ import {
   Sparkles,
   ChevronRight,
   Globe,
+  DownloadCloud,
 } from 'lucide-react';
 import { Halte } from '../types';
 
@@ -28,6 +29,7 @@ interface HalteSelectorProps {
   favorites: string[];
   onToggleFavorite: (halteId: string) => void;
   onAddFoundStop: (stop: { code: string; name: string; type: string }) => void;
+  onOpenImportDrgl?: () => void;
 }
 
 export const HalteSelector: React.FC<HalteSelectorProps> = ({
@@ -39,6 +41,7 @@ export const HalteSelector: React.FC<HalteSelectorProps> = ({
   favorites,
   onToggleFavorite,
   onAddFoundStop,
+  onOpenImportDrgl,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [liveSearchResults, setLiveSearchResults] = useState<
@@ -131,7 +134,7 @@ export const HalteSelector: React.FC<HalteSelectorProps> = ({
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Zoek halte of station..."
+          placeholder="Zoek halte of plak DRGL link (bijv. NL:S:69000900)..."
           className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-200 placeholder-slate-500 text-xs transition-colors"
         />
         {searchQuery && (
@@ -143,6 +146,27 @@ export const HalteSelector: React.FC<HalteSelectorProps> = ({
           </button>
         )}
       </div>
+
+      {/* DRGL Detection / Quick Import Button */}
+      {onOpenImportDrgl && (
+        <div className="flex items-center justify-between px-2.5 py-1.5 bg-blue-950/20 border border-blue-900/40 rounded-lg text-xs">
+          <div className="flex items-center gap-1.5 text-slate-300 truncate">
+            <DownloadCloud className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span className="text-[11px] truncate">
+              {searchQuery.includes('drgl.nl') || searchQuery.includes('NL:S:')
+                ? 'DRGL Link herkend!'
+                : 'DRGL.nl import beschikbaar'}
+            </span>
+          </div>
+          <button
+            onClick={onOpenImportDrgl}
+            className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 bg-blue-900/40 hover:bg-blue-900/60 px-2 py-0.5 rounded border border-blue-700/50 transition-colors shrink-0 flex items-center gap-1"
+          >
+            <span>Importeer tijden</span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       {/* Halte List */}
       <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">

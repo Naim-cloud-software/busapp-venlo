@@ -8,6 +8,7 @@ export interface Halte {
   custom?: boolean;
   createdByUserId?: string;
   createdAt?: string;
+  drglUrl?: string;
 }
 
 export interface StopCall {
@@ -36,6 +37,8 @@ export interface Departure {
   alert?: string | null;
   custom?: boolean;
   stops?: StopCall[];
+  lineColor?: string;
+  lineTextColor?: string;
 }
 
 export interface CustomBus {

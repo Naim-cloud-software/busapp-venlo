@@ -11,6 +11,7 @@ import {
   User as UserIcon,
   CheckCircle2,
   Settings,
+  DownloadCloud,
 } from 'lucide-react';
 import { playTransitChime } from '../utils/audio';
 import { User } from 'firebase/auth';
@@ -21,6 +22,7 @@ interface HeaderProps {
   onOpenPlanner: () => void;
   onOpenStudio: () => void;
   onOpenSettings: () => void;
+  onOpenImportDrgl: () => void;
   currentUser: User | null;
   savedRoutesCount: number;
   onOpenAuth: () => void;
@@ -33,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPlanner,
   onOpenStudio,
   onOpenSettings,
+  onOpenImportDrgl,
   currentUser,
   savedRoutesCount,
   onOpenAuth,
@@ -113,6 +116,15 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Cpu className="w-3.5 h-3.5" />
             <span>Creator Studio</span>
+          </button>
+
+          <button
+            onClick={onOpenImportDrgl}
+            className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white px-2.5 py-1.5 rounded text-xs font-medium border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
+            title="Importeer tijden van DRGL.nl halte-link (zoals https://drgl.nl/stop/NL:S:69000900)"
+          >
+            <DownloadCloud className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Importeer DRGL</span>
           </button>
 
           <button

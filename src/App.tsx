@@ -8,6 +8,7 @@ import { CreatorStudioModal } from './components/CreatorStudioModal';
 import { BusDetailModal } from './components/BusDetailModal';
 import { AuthModal } from './components/AuthModal';
 import { SettingsModal } from './components/SettingsModal';
+import { ImportDrglModal } from './components/ImportDrglModal';
 import { DEFAULT_HALTES } from './defaultData';
 import {
   Halte,
@@ -139,6 +140,7 @@ export default function App() {
   // Modals
   const [plannerOpen, setPlannerOpen] = useState<boolean>(false);
   const [studioOpen, setStudioOpen] = useState<boolean>(false);
+  const [drglModalOpen, setDrglModalOpen] = useState<boolean>(false);
   const [selectedBusForDetail, setSelectedBusForDetail] = useState<Departure | null>(null);
   const [mobileTab, setMobileTab] = useState<'bussen' | 'planner' | 'studio'>('bussen');
 
@@ -520,6 +522,90 @@ export default function App() {
     await deleteUserRouteFromFirestore(routeId);
   };
 
+  // DRGL Halte & Departures Import handlers
+  const handleApplyDrglHalteAndDepartures = (newHalte: Halte, newDepartures: Departure[]) => {
+    // Check if halte already exists in list
+    const existingIndex = haltes.findIndex(
+      (h) =>
+        h.code === newHalte.code ||
+        h.id === newHalte.id ||
+        h.name.toLowerCase() === newHalte.name.toLowerCase()
+    );
+
+    let targetHalte = newHalte;
+    if (existingIndex >= 0) {
+      targetHalte = haltes[existingIndex];
+      // Update drglUrl if not set
+      if (!targetHalte.drglUrl && newHalte.drglUrl) {
+        targetHalte = { ...targetHalte, drglUrl: newHalte.drglUrl };
+        const updated = [...haltes];
+        updated[existingIndex] = targetHalte;
+        setHaltes(updated);
+        localStorage.setItem('NCS_Haltes_v2', JSON.stringify(updated));
+      }
+    } else {
+      const updated = [newHalte, ...haltes];
+      setHaltes(updated);
+      localStorage.setItem('NCS_Haltes_v2', JSON.stringify(updated));
+      saveHalteToFirestore(newHalte).catch((e) =>
+        console.warn('Cloud sync imported halte error:', e)
+      );
+    }
+
+    setSelectedHalte(targetHalte);
+    setSourceModes((prev) => {
+      const next = { ...prev, [targetHalte.id]: 'live' as SourceMode };
+      localStorage.setItem('NCS_SourceModes_v2', JSON.stringify(next));
+      return next;
+    });
+
+    if (newDepartures && newDepartures.length > 0) {
+      setLiveDepartures(newDepartures);
+      setLastUpdated(new Date());
+    } else {
+      fetchLiveDepartures(targetHalte);
+    }
+
+    playTransitChime();
+  };
+
+  const handleSaveDrglAsCustomBuses = async (targetHalte: Halte, importedDepartures: Departure[]) => {
+    const newBuses: CustomBus[] = importedDepartures.map((dep, idx) => ({
+      id: `drgl_${targetHalte.code.replace(/[^a-zA-Z0-9]/g, '_')}_${dep.line}_${idx}`,
+      line: dep.line,
+      destination: dep.destination,
+      time: dep.time,
+      platform: dep.platform || 'Perron',
+      status: dep.status || 'Op tijd',
+      statusColor: dep.statusColor || 'text-emerald-400',
+      type: dep.type,
+      halteId: targetHalte.id,
+      stops: dep.stops && dep.stops.length > 0
+        ? dep.stops
+        : [
+            { name: targetHalte.name, time: dep.time },
+            { name: dep.destination, time: dep.time },
+          ],
+      note: 'Geïmporteerd van DRGL.nl',
+    }));
+
+    setCustomBussen((prev) => {
+      const map = new Map<string, CustomBus>();
+      prev.forEach((b) => map.set(b.id, b));
+      newBuses.forEach((b) => map.set(b.id, b));
+      const combined = Array.from(map.values());
+      localStorage.setItem('NCS_Bussen_v2', JSON.stringify(combined));
+      return combined;
+    });
+
+    for (const b of newBuses) {
+      await saveBusToFirestore(b).catch((e) =>
+        console.warn('Save imported bus err:', e)
+      );
+    }
+    playTransitChime();
+  };
+
   // Reset Data
   const handleResetData = (mode: 'default' | 'clear') => {
     if (mode === 'clear') {
@@ -568,6 +654,7 @@ export default function App() {
         onOpenPlanner={() => setPlannerOpen(true)}
         onOpenStudio={() => setStudioOpen(true)}
         onOpenSettings={() => setSettingsModalOpen(true)}
+        onOpenImportDrgl={() => setDrglModalOpen(true)}
         currentUser={currentUser}
         savedRoutesCount={savedRoutes.length}
         onOpenAuth={() => setAuthModalOpen(true)}
@@ -589,6 +676,7 @@ export default function App() {
             favorites={favorites}
             onToggleFavorite={handleToggleFavorite}
             onAddFoundStop={handleAddFoundStop}
+            onOpenImportDrgl={() => setDrglModalOpen(true)}
           />
         </section>
 
@@ -751,6 +839,15 @@ export default function App() {
         onUpdateSettings={handleUpdateSettings}
         onResetSettings={handleResetSettings}
         currentUser={currentUser}
+      />
+
+      {/* DRGL.nl Halte & Tijden Import Modal */}
+      <ImportDrglModal
+        isOpen={drglModalOpen}
+        onClose={() => setDrglModalOpen(false)}
+        onApplyHalteAndDepartures={handleApplyDrglHalteAndDepartures}
+        onSaveAsCustomBuses={handleSaveDrglAsCustomBuses}
+        currentHalte={selectedHalte}
       />
     </div>
   );

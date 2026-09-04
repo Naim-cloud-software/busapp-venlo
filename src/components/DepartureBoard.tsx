@@ -165,6 +165,18 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
                 {halte.code}
               </span>
             )}
+            {(halte.drglUrl || (halte.code && halte.code !== 'CUSTOM')) && (
+              <a
+                href={halte.drglUrl || `https://drgl.nl/stop/${halte.code}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[9px] font-mono text-blue-400 hover:text-blue-300 bg-blue-950/60 px-2 py-0.5 rounded border border-blue-800/60 flex items-center gap-1 transition-colors"
+                title="Bekijk officiële halte op DRGL.nl"
+              >
+                <span>drgl.nl</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            )}
           </div>
 
           <h2 className="text-xl md:text-2xl font-semibold text-slate-100 tracking-tight flex items-center gap-2">
@@ -371,7 +383,17 @@ export const DepartureBoard: React.FC<DepartureBoardProps> = ({
                     {/* Line Number Badge */}
                     <div className="col-span-2 sm:col-span-2 flex items-center">
                       <span
-                        className={`${badgeStyle} px-2 py-1 rounded text-xs font-bold text-center inline-block min-w-[34px] shadow-sm`}
+                        className={`${
+                          bus.lineColor && !settings?.highContrastLines ? '' : badgeStyle
+                        } px-2 py-1 rounded text-xs font-bold text-center inline-block min-w-[34px] shadow-sm`}
+                        style={
+                          bus.lineColor && !settings?.highContrastLines
+                            ? {
+                                backgroundColor: bus.lineColor,
+                                color: bus.lineTextColor || '#ffffff',
+                              }
+                            : undefined
+                        }
                       >
                         {bus.line}
                       </span>

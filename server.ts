@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { generateScheduleForLine } from './src/utils/routeCatalog';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.RENDER ? Number(process.env.PORT || 10000) : 3000;
 
 app.use(express.json());
 
@@ -93,6 +93,190 @@ app.get('/api/ov/journey', async (req, res) => {
   });
 });
 
+function parseStopCodeFromInput(input: string): string {
+  if (!input) return '';
+  const trimmed = input.trim();
+  const urlMatch = trimmed.match(/stop\/([a-zA-Z0-9:_]+)/i);
+  if (urlMatch) return urlMatch[1];
+  return trimmed.replace(/^stop\//i, '').replace(/\/.*$/, '');
+}
+
+async function fetchDrglDepartures(rawCodeOrUrl: string) {
+  const stopCode = parseStopCodeFromInput(rawCodeOrUrl);
+  if (!stopCode) throw new Error('Ongeldige haltecode of link');
+
+  const url = `https://drgl.nl/stop/${encodeURIComponent(stopCode)}/departurespanel`;
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BusAppVenlo/2.0',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+    signal: AbortSignal.timeout(7000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`drgl responded with HTTP ${response.status}`);
+  }
+
+  const html = await response.text();
+
+  // Extract title
+  const titleMatch = html.match(/class="panel-title">([^<]+)/);
+  const stationTitle = titleMatch
+    ? titleMatch[1]
+        .replace(/&dash;/g, '-')
+        .replace(/\s*-\s*Vertrektijden/i, '')
+        .trim()
+    : '';
+
+  // Extract items accurately using exact anchor regex
+  const itemRegex = /<a\s+[^>]*href="\/journey\/([^"]+)"[^>]*class="[^"]*list-group-item[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
+  let match;
+  const departures = [];
+
+  while ((match = itemRegex.exec(html)) !== null) {
+    const journeyPath = match[1].replace(/^\/|\/$/g, '');
+    const body = match[2];
+
+    const lineMatch = body.match(/class="ott-linecode[^"]*"[^>]*>([^<]+)<\/div>/);
+    const styleMatch = body.match(/class="ott-linecode[^"]*"[^>]*style="([^"]+)"/);
+    const destMatch = body.match(/class="ott-destination">([^<]+)<\/div>/);
+    const timeMatch = body.match(/class="ott-departure-time[^"]*">([^<]+)/);
+    const platMatch = body.match(/class="ott-platform[^"]*"[^>]*>([^<]+)<\/div>/);
+    const opMatch = body.match(/class="ott-productcategory">([^<]+)<\/div>/);
+    const noticeMatch = body.match(/class="notice[^"]*">([^<]+)<\/span>/);
+
+    const isRealtime = body.includes('realtime-indication');
+    const isDeparted = body.includes('ott-departed') || body.includes('ott-tripstatus-passed');
+    const isCancelled = body.includes('ott-cancelled') || body.includes('Vervallen');
+
+    const rawLine = lineMatch ? lineMatch[1].trim() : '?';
+    const rawDest = destMatch ? destMatch[1].trim() : 'Onbekend';
+    const rawTimeAndDelay = timeMatch ? timeMatch[1].trim() : '';
+
+    // Line color styling directly from DRGL (e.g. purple, green, cyan)
+    let lineColor: string | undefined;
+    let lineTextColor: string | undefined;
+    if (styleMatch) {
+      const bgM = styleMatch[1].match(/background\s*:\s*([^;]+)/i);
+      const colM = styleMatch[1].match(/color\s*:\s*([^;]+)/i);
+      if (bgM) lineColor = bgM[1].trim();
+      if (colM) lineTextColor = colM[1].trim();
+    }
+
+    // Separate time e.g. "12:35 +2"
+    const timeParts = rawTimeAndDelay.split(/\s+/);
+    const time = timeParts[0] || '12:00';
+    const delay = timeParts.slice(1).join(' ') || '';
+
+    const platform = platMatch ? platMatch[1].trim() : 'Halte';
+    let operator = opMatch ? opMatch[1].replace(/Bus\s*&bull;\s*/i, '').trim() : 'Arriva';
+    if (!operator || operator === '-') operator = 'Arriva Limburg';
+
+    let status = 'Op tijd';
+    let statusColor = 'text-emerald-400';
+
+    if (isDeparted) {
+      status = 'Vertrokken';
+      statusColor = 'text-slate-500';
+    } else if (isCancelled) {
+      status = 'Vervallen';
+      statusColor = 'text-rose-500 line-through';
+    } else if (delay.includes('+')) {
+      status = `${delay} min`;
+      statusColor = 'text-amber-400 font-bold';
+    }
+
+    // Determine type
+    const numericLine = parseInt(rawLine, 10);
+    let type: 'stads' | 'streek' | 'express' = 'streek';
+    if (!isNaN(numericLine) && numericLine < 10) {
+      type = 'stads';
+    } else if (
+      rawLine.toLowerCase().includes('express') ||
+      rawLine.toLowerCase().includes('snel') ||
+      rawLine === '372'
+    ) {
+      type = 'express';
+    }
+
+    const stops = generateScheduleForLine(rawLine, rawDest, time, delay, stationTitle);
+
+    departures.push({
+      id: `dep_${journeyPath.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      journeyPath,
+      line: rawLine,
+      lineColor,
+      lineTextColor,
+      destination: rawDest,
+      time,
+      delay,
+      isRealtime,
+      platform,
+      operator,
+      status,
+      statusColor,
+      type,
+      alert: noticeMatch ? noticeMatch[1].trim() : null,
+      stops,
+    });
+  }
+
+  // Derive city and icon
+  let city = 'Venlo';
+  let icon = 'map-pin';
+  if (stationTitle.toLowerCase().includes('venlo')) city = 'Venlo';
+  else if (stationTitle.toLowerCase().includes('blerick')) city = 'Blerick';
+  else if (stationTitle.toLowerCase().includes('tegelen')) city = 'Tegelen';
+  else if (stationTitle.toLowerCase().includes('roermond')) city = 'Roermond';
+  else if (stationTitle.toLowerCase().includes('venray')) city = 'Venray';
+
+  if (stationTitle.toLowerCase().includes('station')) icon = 'train';
+  else if (stationTitle.toLowerCase().includes('ziekenhuis')) icon = 'activity';
+
+  const halte = {
+    id: `halte_${stopCode.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    code: stopCode,
+    name: stationTitle || `Halte ${stopCode}`,
+    type: stationTitle.toLowerCase().includes('station')
+      ? 'Hoofdstation & Busplatform'
+      : 'Bushalte & Lijnknooppunt',
+    icon,
+    city,
+    drglUrl: `https://drgl.nl/stop/${stopCode}`,
+  };
+
+  return { stopCode, stationTitle, departures, halte };
+}
+
+// Import DRGL Stop & Departures endpoint (supports URL or code)
+app.all('/api/ov/import-drgl', async (req, res) => {
+  const input =
+    (req.body && req.body.url) ||
+    (req.query && (req.query.url || req.query.stopCode)) ||
+    'NL:S:69000900';
+
+  try {
+    const result = await fetchDrglDepartures(String(input));
+    res.json({
+      success: true,
+      stopCode: result.stopCode,
+      title: result.stationTitle,
+      count: result.departures.length,
+      halte: result.halte,
+      departures: result.departures,
+      source: 'drgl_imported',
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.warn('DRGL import error:', err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Kon DRGL halte niet importeren',
+    });
+  }
+});
+
 // Real live bus departures parser
 app.get('/api/ov/departures/:stopCode', async (req, res) => {
   const { stopCode } = req.params;
@@ -101,111 +285,14 @@ app.get('/api/ov/departures/:stopCode', async (req, res) => {
   }
 
   try {
-    const url = `https://drgl.nl/stop/${encodeURIComponent(stopCode)}/departurespanel`;
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BusAppVenlo/2.0',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-      signal: AbortSignal.timeout(6000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`drgl responded with HTTP ${response.status}`);
-    }
-
-    const html = await response.text();
-
-    // Extract title
-    const titleMatch = html.match(/class="panel-title">([^<]+)/);
-    const stationTitle = titleMatch ? titleMatch[1].replace(/&dash;/g, '-').trim() : '';
-
-    // Extract items
-    const items = html.split('class="list-group-item"').slice(1);
-    const departures = [];
-
-    for (const it of items) {
-      const lineMatch = it.match(/class="ott-linecode[^"]*"[^>]*>([^<]+)<\/div>/);
-      const destMatch = it.match(/class="ott-destination">([^<]+)<\/div>/);
-      const timeMatch = it.match(/class="ott-departure-time[^"]*">([^<]+)/);
-      const platMatch = it.match(/class="ott-platform[^"]*"[^>]*>([^<]+)<\/div>/);
-      const opMatch = it.match(/class="ott-productcategory">([^<]+)<\/div>/);
-      const noticeMatch = it.match(/class="notice[^"]*">([^<]+)<\/span>/);
-      const journeyMatch = it.match(/href="\/journey\/([^"]+)"/);
-
-      const isRealtime = it.includes('realtime-indication');
-      const isDeparted = it.includes('ott-departed') || it.includes('ott-tripstatus-passed');
-      const isCancelled = it.includes('ott-cancelled') || it.includes('Vervallen');
-
-      const rawLine = lineMatch ? lineMatch[1].trim() : '?';
-      const rawDest = destMatch ? destMatch[1].trim() : 'Onbekend';
-      const rawTimeAndDelay = timeMatch ? timeMatch[1].trim() : '';
-
-      // Separate time e.g. "12:35 +2"
-      const timeParts = rawTimeAndDelay.split(/\s+/);
-      const time = timeParts[0] || '12:00';
-      const delay = timeParts.slice(1).join(' ') || '';
-
-      const platform = platMatch ? platMatch[1].trim() : 'Halte';
-      let operator = opMatch ? opMatch[1].replace(/Bus\s*&bull;\s*/i, '').trim() : 'Arriva';
-      if (!operator || operator === '-') operator = 'Arriva Limburg';
-
-      let status = 'Op tijd';
-      let statusColor = 'text-emerald-400';
-
-      if (isDeparted) {
-        status = 'Vertrokken';
-        statusColor = 'text-slate-500';
-      } else if (isCancelled) {
-        status = 'Vervallen';
-        statusColor = 'text-rose-500 line-through';
-      } else if (delay.includes('+')) {
-        status = `${delay} min`;
-        statusColor = 'text-amber-400 font-bold';
-      }
-
-      // Determine type
-      const numericLine = parseInt(rawLine, 10);
-      let type: 'stads' | 'streek' | 'express' = 'streek';
-      if (!isNaN(numericLine) && numericLine < 10) {
-        type = 'stads';
-      } else if (
-        rawLine.toLowerCase().includes('express') ||
-        rawLine.toLowerCase().includes('snel') ||
-        rawLine === '372'
-      ) {
-        type = 'express';
-      }
-
-      const journeyPath = journeyMatch ? journeyMatch[1].replace(/^\/|\/$/g, '') : undefined;
-      const stops = generateScheduleForLine(rawLine, rawDest, time, delay, stationTitle);
-
-      departures.push({
-        id: journeyPath
-          ? `dep_${journeyPath.replace(/[^a-zA-Z0-9]/g, '_')}`
-          : `dep_${Math.random().toString(36).substring(2, 9)}`,
-        journeyPath,
-        line: rawLine,
-        destination: rawDest,
-        time,
-        delay,
-        isRealtime,
-        platform,
-        operator,
-        status,
-        statusColor,
-        type,
-        alert: noticeMatch ? noticeMatch[1].trim() : null,
-        stops,
-      });
-    }
+    const result = await fetchDrglDepartures(stopCode);
 
     res.json({
       success: true,
-      stopCode,
-      title: stationTitle,
-      count: departures.length,
-      departures,
+      stopCode: result.stopCode,
+      title: result.stationTitle,
+      count: result.departures.length,
+      departures: result.departures,
       source: 'live_network',
       updatedAt: new Date().toISOString(),
     });
